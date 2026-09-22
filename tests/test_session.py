@@ -49,6 +49,38 @@ class SessionParsingTests(unittest.TestCase):
         )
         self.assertEqual(session.turn_count(path), 3)
 
+    def test_turn_count_counts_codex_payload_records(self) -> None:
+        path = _write_sessions(
+            self.tmp,
+            [
+                {"type": "session_meta", "payload": {"session_id": "abc"}},
+                {"type": "response_item", "payload": {"type": "message", "role": "user", "content": "hi"}},
+                {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": "hi"}},
+            ],
+        )
+        self.assertEqual(session.turn_count(path), 2)
+
+    def test_first_embedded_id_finds_nested_codex_payload(self) -> None:
+        path = _write_sessions(
+            self.tmp,
+            [
+                {"type": "session_meta", "payload": {"session_id": "01a0761e-8f99"}},
+            ],
+        )
+        self.assertEqual(session._first_embedded_id(path), "01a0761e-8f99")
+
+    def test_derive_session_id_extracts_codex_payload_id(self) -> None:
+        path = _write_sessions(
+            self.tmp,
+            [
+                {"type": "session_meta", "payload": {"session_id": "01a0761e-8f99-7442-8b07-12fcd5f07e1c"}},
+            ],
+        )
+        self.assertEqual(
+            session.derive_session_id(path, session._first_embedded_id(path)),
+            "01a0761e-8f99-7442-8b07-12fcd5f07e1c",
+        )
+
     def test_turn_count_skips_malformed_lines(self) -> None:
         path = self.tmp / "bad.jsonl"
         path.write_text('{"type": "user", "message": {"role": "user", "content": "one"}}\nnot json\n{}\n', encoding="utf-8")
@@ -68,9 +100,13 @@ class SessionParsingTests(unittest.TestCase):
 
     def test_derive_session_id_shortens_long_values(self) -> None:
         self.assertEqual(
-            session.derive_session_id(Path("/tmp/x.jsonl"), "A" * 40),
-            "A" * 24,
+            session.derive_session_id(Path("/tmp/x.jsonl"), "A" * 100),
+            "A" * 64,
         )
+
+    def test_derive_session_id_keeps_uuid_untouched(self) -> None:
+        uuid_ = "1dbb8ce4-0e5d-4c5e-a017-d12f12a29d98"
+        self.assertEqual(session.derive_session_id(Path("/tmp/x.jsonl"), uuid_), uuid_)
 
     def test_derive_session_id_falls_back_to_filename_stem(self) -> None:
         path = Path("/tmp/abc-123.jsonl")

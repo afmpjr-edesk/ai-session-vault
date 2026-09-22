@@ -12,9 +12,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from ai_session_vault import __version__
-from ai_session_vault.config import VaultConfig
+from ai_session_vault.config import VaultConfig, expand_pattern
 from ai_session_vault.search import search_text
 from ai_session_vault.vault import GitError, Vault
 
@@ -72,6 +73,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON file (0600) where the secret->placeholder mapping is persisted",
     )
 
+    p_discover = sub.add_parser(
+        "discover",
+        help="list session files matching the vault's configured runtime paths",
+    )
+    p_discover.add_argument("--runtime", default=None, help="restrict to one runtime (e.g. claude, codex)")
+    p_discover.add_argument("--json", action="store_true")
+    p_discover.add_argument("--vault", type=Path, default=None)
+
+    p_config = sub.add_parser("config", help="read or set vault configuration")
+    config_sub = p_config.add_subparsers(dest="config_command", required=True)
+    p_config_set = config_sub.add_parser("set", help="set a configuration value")
+    p_config_set.add_argument("key", help="dotted key, e.g. paths.claude")
+    p_config_set.add_argument("value")
+    p_config_set.add_argument("--vault", type=Path, default=None)
+    p_config_get = config_sub.add_parser("get", help="print a configuration value")
+    p_config_get.add_argument("key", default="", nargs="?")
+    p_config_get.add_argument("--vault", type=Path, default=None)
+
     return parser
 
 
@@ -117,6 +136,68 @@ def _cmd_log(args: argparse.Namespace) -> int:
     vault = _resolve_vault(args.vault)
     for line in vault.log(max_count=args.max):
         print(line)
+    return 0
+
+
+def _cmd_discover(args: argparse.Namespace) -> int:
+    vault = _resolve_vault(args.vault)
+    items: list[dict] = []
+    found: list[Path] = []
+    for runtime, pattern in vault.config.runtime_patterns().items():
+        if args.runtime and runtime != args.runtime:
+            continue
+        for path in expand_pattern(pattern):
+            found.append(path)
+            items.append({"runtime": runtime, "path": str(path)})
+    if args.json:
+        print(json.dumps({"patterns": items, "count": len(items)}, indent=2))
+        return 0
+    if not found:
+        print("no session files matched the configured paths")
+        return 0
+    for item in items:
+        print(f"{item['runtime']:<8} {item['path']}")
+    return 0
+
+
+def _cmd_config(args: argparse.Namespace) -> int:
+    vault = _resolve_vault(args.vault)
+    if args.config_command == "set":
+        key = args.key
+        if key.startswith("paths."):
+            runtime = key.split(".", 1)[1]
+            vault.config.set_path(runtime, args.value)
+            vault.config.save(vault.root / VaultConfig.CONFIG_FILENAME)
+            print(f"set {key} = {args.value}")
+            return 0
+        if key == "vault_dir":
+            vault.config.raw["vault_dir"] = args.value
+            vault.config.save(vault.root / VaultConfig.CONFIG_FILENAME)
+            print(f"set {key} = {args.value}")
+            return 0
+        print(f"asv: error: unsupported config key {key!r}", file=sys.stderr)
+        return 2
+
+    # config get
+    if not args.key:
+        print(json.dumps(vault.config.raw, indent=2, ensure_ascii=False))
+        return 0
+    if args.key.startswith("paths."):
+        runtime = args.key.split(".", 1)[1]
+        value = vault.config.get_path(runtime)
+        if value is None:
+            print(f"asv: error: no such key {args.key!r}", file=sys.stderr)
+            return 2
+        print(value)
+        return 0
+    node: Any = vault.config.raw
+    for part in args.key.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            print(f"asv: error: no such key {args.key!r}", file=sys.stderr)
+            return 2
+    print(node)
     return 0
 
 
@@ -223,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
         "show": _cmd_show,
         "find": _cmd_find,
         "secrets": _cmd_secrets,
+        "discover": _cmd_discover,
+        "config": _cmd_config,
     }
     return handlers[args.command](args)
 

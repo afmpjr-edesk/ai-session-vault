@@ -27,14 +27,17 @@ PYTHONPATH=src python -m ai_session_vault --help
 # 1. Initialise a vault
 asv init ~/.ai-session-vault
 
-# 2. Snapshot a session file into the vault
-asv add --runtime claude --vault ~/.ai-session-vault \
-    ~/.claude/projects/some-project/agent-logs/abc123.jsonl
+# 2. (Optional) see which session files the vault knows about
+asv discover
 
-# 3. Commit the snapshot to the vault's git history
+# 3. Snapshot a session file into the vault
+asv add --runtime claude --vault ~/.ai-session-vault \
+    ~/.claude/projects/some-project/abc123.jsonl
+
+# 4. Commit the snapshot to the vault's git history
 asv commit --vault ~/.ai-session-vault -m "first snapshot"
 
-# 4. Browse, search, read
+# 5. Browse, search, read
 asv log   --vault ~/.ai-session-vault
 asv status --vault ~/.ai-session-vault
 asv show <session_id> --vault ~/.ai-session-vault
@@ -55,8 +58,43 @@ not required.
 | `status` | Show vault location, session count, runtimes, dirty state. |
 | `show SESSION_ID` | Render a session as readable text. |
 | `find QUERY` | Search stored sessions (shows session + snippets). |
+| `discover [--runtime R]` | Expand each runtime's path glob into real session files. |
+| `config set KEY VALUE` | Set a config value (e.g. `paths.claude`). |
+| `config get [KEY]` | Print a config value or the whole config without a key. |
 | `secrets scan FILE` | List candidate secrets in a session file. |
 | `secrets redact FILE` | Print the file with secrets replaced by `[REDACTED:sha]`. |
+
+## Session paths
+
+Each runtime has a default glob stored in `vault.json` under `paths`, pointing
+at real session-file locations:
+
+| Runtime | Default glob |
+| --- | --- |
+| claude | `~/.claude/projects/*/*.jsonl` |
+| codex | `~/.codex/sessions/**/*.jsonl` |
+
+`discover` expands these globs into the session files currently on disk, which
+is handy before running `add` or to sanity-check a custom glob:
+
+```bash
+asv discover                 # all runtimes
+asv discover --runtime codex # just one
+```
+
+Override a runtime's glob per vault — useful when runtimes keep sessions in a
+non-standard place:
+
+```bash
+asv config set paths.codex "~/.codex/archive/**/*.jsonl"
+asv config get paths.codex     # -> ~/.codex/archive/**/*.jsonl
+asv config get                 # full config as JSON
+```
+
+Session identifiers come from the file when possible, with a stable fallback:
+claude writes `sessionId` at the top level of each record; codex nests
+`session_id` inside the `payload` of the `session_meta` record — both are
+detected. UUIDs are kept intact.
 
 ## Secrets handling
 
@@ -100,5 +138,8 @@ Every commit is a normal git commit, so any git tool works against the vault
 * **No daemon** — every operation is an explicit CLI action; nothing runs in
   the background.
 * **Tolerant parsing** — sessions from different runtimes (Claude, OpenCode,
-  Codex, …) may have different JSON shapes; malformed lines are skipped, never
+  Codex, …) may have different JSON shapes (claude top-level `sessionId`,
+  codex nested `payload.session_id`); malformed lines are skipped, never
   fatal.
+* **Configurable paths** — default globs are verified against real runtimes;
+  each vault may override them per runtime (`config set paths.<runtime>`).

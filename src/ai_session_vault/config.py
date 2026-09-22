@@ -7,6 +7,7 @@ vault knows about, where their session files live, and basic behaviour flags.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 from pathlib import Path
@@ -15,12 +16,22 @@ from typing import Any
 CONFIG_FILENAME = "vault.json"
 
 DEFAULT_PATHS: list[dict[str, str]] = [
-    {"runtime": "claude", "annotation": "Claude Code", "pattern": "~/.claude/projects/*/agent-logs/*.jsonl"},
-    {"runtime": "opencode", "annotation": "OpenCode", "pattern": "~/.local/share/opencode/storage/session/*.jsonl"},
-    {"runtime": "codex", "annotation": "Codex CLI", "pattern": "~/.codex/sessions/*.jsonl"},
+    {"runtime": "claude", "annotation": "Claude Code", "pattern": "~/.claude/projects/*/*.jsonl"},
+    {"runtime": "codex", "annotation": "Codex CLI", "pattern": "~/.codex/sessions/**/*.jsonl"},
 ]
 
-DEFAULT_IGNORE = ("~/.claude/projects/.git",)
+DEFAULT_IGNORE: tuple[str, ...] = ()
+
+
+def expand_pattern(pattern: str) -> list[Path]:
+    """Expand a ``~``-prefixed glob into the real session files it matches.
+
+    Recursive ``**`` globs and single ``*`` are honoured; non-file matches
+    (directories, absent paths) are excluded. Returns a sorted list.
+    """
+    expanded = os.path.expanduser(pattern)
+    matches = [Path(item) for item in glob.glob(expanded, recursive=True)]
+    return sorted(item for item in matches if item.is_file())
 
 
 class VaultConfig:
@@ -74,6 +85,20 @@ class VaultConfig:
 
     def runtime_patterns(self) -> dict[str, str]:
         return {entry["runtime"]: entry["pattern"] for entry in self.raw.get("paths", [])}
+
+    def get_path(self, runtime: str) -> str | None:
+        return self.runtime_patterns().get(runtime)
+
+    def set_path(self, runtime: str, pattern: str) -> None:
+        """Set or replace the session path pattern for a runtime."""
+        paths = self.raw.setdefault("paths", [])
+        for entry in paths:
+            if entry.get("runtime") == runtime:
+                entry["pattern"] = pattern
+                break
+        else:
+            annotation = runtime.capitalize()
+            paths.append({"runtime": runtime, "annotation": annotation, "pattern": pattern})
 
     def has_runtime(self, runtime: str) -> bool:
         return any(entry.get("runtime") == runtime for entry in self.raw.get("paths", []))

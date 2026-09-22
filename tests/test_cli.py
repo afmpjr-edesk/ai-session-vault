@@ -47,6 +47,38 @@ class CliDispatchTests(unittest.TestCase):
             vault = cli._resolve_vault(None)
         self.assertEqual(vault.root, cli.DEFAULT_VAULT.resolve())
 
+    def test_config_set_path_writes_to_vault_json(self) -> None:
+        vault_dir = self.tmp / "vault"
+        cli.Vault.init(vault_dir)
+        with patch("sys.argv", ["asv", "config", "set", "paths.claude", "*/*.jsonl", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+        with patch("sys.argv", ["asv", "config", "get", "paths.claude", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+
+    def test_config_get_missing_key_returns_error(self) -> None:
+        vault_dir = self.tmp / "vault"
+        cli.Vault.init(vault_dir)
+        with patch("sys.argv", ["asv", "config", "get", "paths.doesnotexist", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 2)
+
+    def test_discover_lists_matching_session_files(self) -> None:
+        from ai_session_vault.config import expand_pattern
+
+        vault_dir = self.tmp / "vault"
+        cli.Vault.init(vault_dir)
+        session_dir = self.tmp / "sessions"
+        session_dir.mkdir()
+        (session_dir / "aaa.jsonl").write_text('{"type": "user", "message": {"role": "user", "content": "hi"}}\n', encoding="utf-8")
+        with patch("sys.argv", ["asv", "config", "set", "paths.claude", str(session_dir / "*.jsonl"), "--vault", str(vault_dir)]):
+            cli.main()
+        with patch("sys.argv", ["asv", "discover", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+        self.assertEqual(len(expand_pattern(str(session_dir / "*.jsonl"))), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

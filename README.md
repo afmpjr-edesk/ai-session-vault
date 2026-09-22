@@ -17,6 +17,8 @@ asv log                        browse the vault history
 asv status                     show vault location, sessions, dirty state
 asv show SESSION_ID            render a session as readable text
 asv find QUERY                 search stored sessions
+asv discover                   list session files matching configured paths
+asv config set paths.codex G   override a runtime's session path glob
 asv secrets scan|redact FILE   detect and redact secrets before sharing
 ```
 
@@ -35,11 +37,19 @@ asv secrets scan|redact FILE   detect and redact secrets before sharing
 ## Usage at a glance
 
 ```bash
-# Initialise a vault (git repo + config)
+# Initialise a vault (git repo + config); built-in paths point at real
+# runtimes (Claude Code session files in ~/.claude/projects/*/*.jsonl,
+# Codex rollouts in ~/.codex/sessions/**/*.jsonl)
 asv init ~/.ai-session-vault
 
+# List the session files `asv add` can snapshot right now
+asv discover
+
+# Override where a runtime's sessions live (stored in vault.json, per vault)
+asv config set paths.codex "~/.codex/archive/**/*.jsonl"
+
 # Snapshot a session file; run from inside the vault dir or pass --vault
-asv add --runtime claude ~/.claude/projects/<proj>/agent-logs/<session>.jsonl
+asv add --runtime claude ~/.claude/projects/<proj>/<session>.jsonl
 
 # Commit pending changes to the vault's git history
 asv commit -m "snapshot: fixed deploy script"
@@ -88,7 +98,11 @@ The project follows TDD: tests live in `tests/` and cover the core modules
   storage.
 - **No daemon** — every operation is an explicit CLI action.
 - **Tolerant parsing** — sessions from different runtimes have different JSON
-  shapes; malformed lines are skipped, never fatal.
+  shapes (claude sends `sessionId` at the top level, codex nests it in
+  `payload`); malformed lines are skipped, never fatal.
+- **Configurable paths** — built-in session path globs are verified against
+  real runtimes, and each vault can override them per runtime via
+  `asv config set paths.<runtime> <glob>`.
 - **Secrets by default** — redaction is deterministic and reversible for the
   vault owner.
 
