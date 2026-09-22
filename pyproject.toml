@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-session-vault"
+version = "0.1.0"
+description = "Local-first version control for AI agent sessions (JSONL) on top of Git."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Antonio Francisco", email = "afmpjr@outlook.com" }]
+keywords = ["git", "agents", "sessions", "jsonl", "version-control"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control",
+]
+
+[project.scripts]
+asv = "ai_session_vault.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Einsia/agent-git"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ai_session_vault = ["py.typed"]

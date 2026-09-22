@@ -15,5 +15,5 @@ dist/
 # OS
 .DS_Store
 
-# Runtime artifacts
-*.log
+# Worktrees
+.wt-*/

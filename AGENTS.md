@@ -1,24 +1,25 @@
 # AGENTS.md — ai-session-vault
 
-Projeto local-first de versionamento de sessões de agentes de IA sobre Git.
+Local-first version control for AI agent sessions (JSONL) on top of Git.
 
-## Princípios do projeto
+## Project principles
 
-- **Local-first**: todo o estado vive localmente (JSONL + sidecars + git). Nada sai da máquina por padrão.
-- **Formatos abertos**: JSONL puro + metadados JSON sidecar; git é o mecanismo de versão.
-- **Sem lock-in**: migração trivial via `git` ou cópia de arquivos; tipos de sessão registrados em config.
-- **Segredos**: filtro de baixa entropia + placeholders reversíveis; nada sensível versionado em texto claro.
+- **Local-first**: all state lives on the machine (JSONL files + sidecars + Git). Nothing leaves the machine by default.
+- **Open formats**: plain JSONL plus JSON sidecar metadata; Git is the versioning mechanism.
+- **No lock-in**: trivial migration via `git` or file copy; session formats are registered in the runtime registry.
+- **Secrets**: reversible low-entropy filter stays out of the repository; no sensitive values are committed in plain text.
 
-## Convenções
+## Conventions
 
-- Python 3.12+ stdlib (zero dependências de terceiros em runtime).
-- TDD: escrever teste antes da implementação; suíte em `tests/` (unittest).
-- Estrutura: `src/ai_session_vault/` pacote; `scripts/` para operações; `docs/` para guias.
-- Contrato CLI: subcomandos curtos e `--json` para automação, saída humana para terminal.
+- **British English everywhere** (code, identifiers, docstrings, docs, scripts, commit messages). The sole exception is `AI_HANDOFF.md`, which is written in the user's language (Portuguese).
+- Python 3.12+ stdlib only (zero third-party runtime dependencies).
+- TDD: write the test before (or alongside) the implementation; suite lives in `tests/` (unittest).
+- Layout: `src/ai_session_vault/` is the package; `scripts/` holds operations; `docs/` holds guides.
+- CLI contract: short subcommands, `--json` for automation, human-readable output for a terminal.
 
-## Validações obrigatórias
+## Mandatory validation
 
-- `./scripts/test.sh` — roda a suíte completa.
-- Ao criar subcomando novo: atualizar `docs/01_usage.md`.
+- `./scripts/test.sh` — runs the full test suite.
+- When adding a new subcommand: update `docs/01_usage.md`.
 
-Veja também `/home/afmpjr/AGENTS.md` (diretrizes globais) e `/home/afmpjr/AI_ONBOARDING.md` (protocolo de sessão).
+See also `/home/afmpjr/AGENTS.md` (global guidelines) and `/home/afmpjr/AI_ONBOARDING.md` (session protocol).
