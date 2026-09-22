@@ -18,7 +18,7 @@ asv status                     show vault location, sessions, dirty state
 asv show SESSION_ID            render a session as readable text
 asv find QUERY                 search stored sessions
 asv discover                   list session files matching configured paths
-asv config set paths.codex G   override a runtime's session path glob
+asv config set paths.codex GLOB  override a runtime's session path glob
 asv secrets scan|redact FILE   detect and redact secrets before sharing
 ```
 
