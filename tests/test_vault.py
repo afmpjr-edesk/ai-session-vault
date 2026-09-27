@@ -64,6 +64,83 @@ class VaultTests(unittest.TestCase):
         entries = self.vault.log()
         self.assertGreaterEqual(len(entries), 1)
 
+    def test_parse_count_objects(self) -> None:
+        raw = "count: 12\nsize: 48\nin-pack: 100\npacks: 2\nsize-pack: 250\n"
+        metrics = self.vault._parse_count_objects(raw)
+        self.assertEqual(metrics["count"], 12)
+        self.assertEqual(metrics["size"], 48)
+        self.assertEqual(metrics["in-pack"], 100)
+
+    def test_status_includes_storage_metrics(self) -> None:
+        src = self.tmp / "session.jsonl"
+        src.write_text('{"type": "user", "message": {"role": "user", "content": "hi"}}\n', encoding="utf-8")
+        self.vault.add_session(src, runtime="claude")
+        self.vault.commit("first")
+        status = self.vault.status()
+        self.assertIn("loose_objects", status)
+        self.assertIn("loose_kib", status)
+        self.assertIn("needs_repack", status)
+        self.assertFalse(status["needs_repack"])
+
+    def test_repack_triggers_when_loose_objects_exceed_threshold(self) -> None:
+        # Configure a tiny threshold of 1 loose object
+        self.vault.config.raw.setdefault("storage", {})["repack"] = {
+            "enabled": True,
+            "loose_objects": 1,
+            "loose_bytes": 1024,
+        }
+        self.vault.config.save(self.vault.root / VaultConfig.CONFIG_FILENAME)
+
+        src = self.tmp / "session.jsonl"
+        src.write_text('{"type": "user", "message": {"role": "user", "content": "hi"}}\n', encoding="utf-8")
+        self.vault.add_session(src, runtime="claude")
+        self.vault.commit("first")
+
+        # After commit with repack threshold=1, loose objects should be packed
+        metrics = self.vault._parse_count_objects(self.vault._git("count-objects", "-v"))
+        self.assertEqual(metrics.get("count", 0), 0)
+        self.assertGreater(metrics.get("in-pack", 0), 0)
+
+    def test_repack_skipped_when_disabled(self) -> None:
+        self.vault.config.raw.setdefault("storage", {})["repack"] = {
+            "enabled": False,
+            "loose_objects": 1,
+            "loose_bytes": 1024,
+        }
+        self.vault.config.save(self.vault.root / VaultConfig.CONFIG_FILENAME)
+
+        src = self.tmp / "session.jsonl"
+        src.write_text('{"type": "user", "message": {"role": "user", "content": "hi"}}\n', encoding="utf-8")
+        self.vault.add_session(src, runtime="claude")
+        self.vault.commit("first")
+
+        # Repack disabled -> loose objects remain
+        metrics = self.vault._parse_count_objects(self.vault._git("count-objects", "-v"))
+        self.assertGreater(metrics.get("count", 0), 0)
+
+    def test_discover_and_sync(self) -> None:
+        source_dir = self.tmp / "source_sessions"
+        source_dir.mkdir()
+        src_file = source_dir / "my_session.jsonl"
+        src_file.write_text('{"type": "user", "message": {"role": "user", "content": "test sync"}}\n', encoding="utf-8")
+
+        self.vault.config.set_path("claude", str(source_dir / "*.jsonl"))
+        self.vault.config.save(self.vault.root / VaultConfig.CONFIG_FILENAME)
+
+        discovered = self.vault.discover(runtime="claude")
+        self.assertEqual(len(discovered), 1)
+        self.assertEqual(discovered[0][0], "claude")
+
+        res = self.vault.sync(runtime="claude")
+        self.assertEqual(res["discovered"], 1)
+        self.assertEqual(res["added"], 1)
+        self.assertTrue(bool(res["commit"]))
+
+        # Second sync is idempotent
+        res2 = self.vault.sync(runtime="claude")
+        self.assertEqual(res2["discovered"], 1)
+        self.assertEqual(res2["commit"], "")  # Nothing to commit
+
 
 if __name__ == "__main__":
     unittest.main()

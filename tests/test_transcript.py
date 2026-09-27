@@ -47,6 +47,16 @@ class TranscriptTests(unittest.TestCase):
         out = _render(['{"type": "user", "message": {"content": "no role"}}\n'])
         self.assertIn("user: no role", out)
 
+    def test_direct_antigravity_content_renders(self) -> None:
+        out = _render(
+            [
+                '{"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "how to build"}\n',
+                '{"source": "MODEL", "type": "PLANNER_RESPONSE", "content": "here is how"}\n',
+            ]
+        )
+        self.assertIn("USER_EXPLICIT: how to build", out)
+        self.assertIn("MODEL: here is how", out)
+
 
 if __name__ == "__main__":
     unittest.main()

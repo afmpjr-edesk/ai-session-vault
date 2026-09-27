@@ -18,9 +18,20 @@ CONFIG_FILENAME = "vault.json"
 DEFAULT_PATHS: list[dict[str, str]] = [
     {"runtime": "claude", "annotation": "Claude Code", "pattern": "~/.claude/projects/*/*.jsonl"},
     {"runtime": "codex", "annotation": "Codex CLI", "pattern": "~/.codex/sessions/**/*.jsonl"},
+    {
+        "runtime": "antigravity",
+        "annotation": "Antigravity",
+        "pattern": "~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl",
+    },
 ]
 
 DEFAULT_IGNORE: tuple[str, ...] = ()
+
+DEFAULT_STORAGE_REPACK: dict[str, Any] = {
+    "enabled": True,
+    "loose_objects": 512,
+    "loose_bytes": 64 * 1024 * 1024,
+}
 
 
 def expand_pattern(pattern: str) -> list[Path]:
@@ -52,8 +63,9 @@ class VaultConfig:
                     {"runtime": entry["runtime"], "annotation": entry["annotation"]}
                     for entry in DEFAULT_PATHS
                 ],
-                "paths": DEFAULT_PATHS,
+                "paths": [dict(entry) for entry in DEFAULT_PATHS],
                 "ignore": list(DEFAULT_IGNORE),
+                "storage": {"repack": dict(DEFAULT_STORAGE_REPACK)},
             }
         )
 
@@ -102,6 +114,21 @@ class VaultConfig:
 
     def has_runtime(self, runtime: str) -> bool:
         return any(entry.get("runtime") == runtime for entry in self.raw.get("paths", []))
+
+    @property
+    def storage_repack(self) -> dict[str, Any]:
+        """Return the effective storage repack settings, falling back to defaults."""
+        storage = self.raw.get("storage")
+        if not isinstance(storage, dict):
+            storage = {}
+        repack = storage.get("repack")
+        if not isinstance(repack, dict):
+            repack = {}
+        return {
+            "enabled": bool(repack.get("enabled", DEFAULT_STORAGE_REPACK["enabled"])),
+            "loose_objects": int(repack.get("loose_objects", DEFAULT_STORAGE_REPACK["loose_objects"])),
+            "loose_bytes": int(repack.get("loose_bytes", DEFAULT_STORAGE_REPACK["loose_bytes"])),
+        }
 
 
 class RuntimeRegistry:

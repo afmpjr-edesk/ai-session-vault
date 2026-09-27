@@ -12,11 +12,12 @@ your machine.
 ```
 asv init                       initialise a vault
 asv add --runtime claude FILE  snapshot a session into the vault
+asv sync                       discover, snapshot, and commit in one step
 asv commit -m "message"        commit pending changes
 asv log                        browse the vault history
-asv status                     show vault location, sessions, dirty state
+asv status                     show vault location, sessions, dirty state, storage
 asv show SESSION_ID            render a session as readable text
-asv find QUERY                 search stored sessions
+asv find QUERY                 search stored sessions (streaming, low RAM)
 asv discover                   list session files matching configured paths
 asv config set paths.codex GLOB  override a runtime's session path glob
 asv secrets scan|redact FILE   detect and redact secrets before sharing
@@ -33,16 +34,23 @@ asv secrets scan|redact FILE   detect and redact secrets before sharing
   machine by default; redaction is the sharing gateway.
 - **No server, no daemon, no account, no lock-in** — a vault is just a git
   repository with JSONL files.
+- **Automatic packing (ADR-001)** — keeps history packed down to ~16× smaller
+  without bloated loose objects.
 
 ## Usage at a glance
 
 ```bash
 # Initialise a vault (git repo + config); built-in paths point at real
-# runtimes (Claude Code session files in ~/.claude/projects/*/*.jsonl,
-# Codex rollouts in ~/.codex/sessions/**/*.jsonl)
+# runtimes:
+# - Claude Code (~/.claude/projects/*/*.jsonl)
+# - Codex (~/.codex/sessions/**/*.jsonl)
+# - Antigravity (~/.gemini/antigravity/brain/*/.../transcript.jsonl)
 asv init ~/.ai-session-vault
 
-# List the session files `asv add` can snapshot right now
+# Sync all sessions across all runtimes in one step (event-driven, no cron)
+asv sync
+
+# Or list the session files `asv add` can snapshot right now
 asv discover
 
 # Override where a runtime's sessions live (stored in vault.json, per vault)

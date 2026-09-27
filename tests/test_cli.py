@@ -97,6 +97,50 @@ class CliDispatchTests(unittest.TestCase):
         self.assertIn("codex", out.getvalue())
         self.assertIn(str(session_dir / "aaa.jsonl"), out.getvalue())
 
+    def test_sync_subcommand_adds_and_commits(self) -> None:
+        from io import StringIO
+
+        vault_dir = self.tmp / "vault"
+        cli.Vault.init(vault_dir)
+        session_dir = self.tmp / "sessions"
+        session_dir.mkdir()
+        (session_dir / "sync_sample.jsonl").write_text('{"type": "user", "message": {"role": "user", "content": "hi"}}\n', encoding="utf-8")
+        with patch("sys.argv", ["asv", "config", "set", "paths.claude", str(session_dir / "*.jsonl"), "--vault", str(vault_dir)]):
+            cli.main()
+
+        out = StringIO()
+        with patch("sys.stdout", out), patch("sys.argv", ["asv", "sync", "--runtime", "claude", "--vault", str(vault_dir), "--json"]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+        self.assertIn('"discovered": 1', out.getvalue())
+        self.assertIn('"added": 1', out.getvalue())
+
+    def test_config_set_storage_repack_persists(self) -> None:
+        from io import StringIO
+
+        vault_dir = self.tmp / "vault"
+        cli.Vault.init(vault_dir)
+        with patch("sys.argv", ["asv", "config", "set", "storage.repack.enabled", "false", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+
+        out = StringIO()
+        with patch("sys.stdout", out), patch("sys.argv", ["asv", "config", "get", "storage.repack.enabled", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+        self.assertIn("False", out.getvalue())
+
+    def test_status_reports_storage_health(self) -> None:
+        from io import StringIO
+
+        vault_dir = self.tmp / "vault"
+        cli.Vault.init(vault_dir)
+        out = StringIO()
+        with patch("sys.stdout", out), patch("sys.argv", ["asv", "status", "--vault", str(vault_dir)]):
+            result = cli.main()
+        self.assertEqual(result, 0)
+        self.assertIn("storage:", out.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

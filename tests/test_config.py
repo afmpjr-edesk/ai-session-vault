@@ -74,6 +74,29 @@ class VaultConfigTests(unittest.TestCase):
         self.assertEqual(config.get_path("opencode"), "~/.config/opencode/*.jsonl")
         self.assertIn("opencode", config.runtime_patterns())
 
+    def test_default_paths_include_antigravity(self) -> None:
+        names = {entry["runtime"] for entry in DEFAULT_PATHS}
+        self.assertIn("antigravity", names)
+        patterns = {entry["runtime"]: entry["pattern"] for entry in DEFAULT_PATHS}
+        self.assertEqual(
+            patterns["antigravity"],
+            "~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl",
+        )
+
+    def test_storage_repack_defaults_and_property(self) -> None:
+        config = VaultConfig.default()
+        repack = config.storage_repack
+        self.assertTrue(repack["enabled"])
+        self.assertEqual(repack["loose_objects"], 512)
+        self.assertEqual(repack["loose_bytes"], 64 * 1024 * 1024)
+
+    def test_storage_repack_custom_override(self) -> None:
+        config = VaultConfig({"storage": {"repack": {"enabled": False, "loose_objects": 128}}})
+        repack = config.storage_repack
+        self.assertFalse(repack["enabled"])
+        self.assertEqual(repack["loose_objects"], 128)
+        self.assertEqual(repack["loose_bytes"], 64 * 1024 * 1024)
+
 
 if __name__ == "__main__":
     unittest.main()

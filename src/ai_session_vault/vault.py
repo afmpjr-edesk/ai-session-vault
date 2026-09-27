@@ -23,7 +23,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from ai_session_vault.config import CONFIG_FILENAME, VaultConfig
+from ai_session_vault.config import CONFIG_FILENAME, VaultConfig, expand_pattern
 from ai_session_vault.session import IdentifiedSession
 
 SESSION_SUBDIR = "sessions"
@@ -143,13 +143,49 @@ class Vault:
             )
         return StoredSession(self.root, runtime, identified.session_id)
 
+    def _parse_count_objects(self, text: str) -> dict[str, int]:
+        """Parse 'git count-objects -v' into integer metrics."""
+        metrics: dict[str, int] = {}
+        for line in text.splitlines():
+            if ":" not in line:
+                continue
+            key, val = line.split(":", 1)
+            try:
+                metrics[key.strip()] = int(val.strip())
+            except ValueError:
+                continue
+        return metrics
+
+    def _maybe_repack(self) -> bool:
+        """Repack loose objects if thresholds are exceeded (ADR-001)."""
+        repack_config = self.config.storage_repack
+        if not repack_config.get("enabled", True):
+            return False
+        max_loose = repack_config.get("loose_objects", 512)
+        max_kib = repack_config.get("loose_bytes", 64 * 1024 * 1024) // 1024
+        try:
+            raw = self._git("count-objects", "-v")
+            metrics = self._parse_count_objects(raw)
+            count = metrics.get("count", 0)
+            size_kib = metrics.get("size", 0)
+            if count >= max_loose or size_kib >= max_kib:
+                self._git("repack", "-adq")
+                self._git("prune-packed")
+                return True
+        except Exception:
+            # Repack maintenance is best-effort and must never fail commits
+            pass
+        return False
+
     def commit(self, message: str) -> str:
         """Stage all vault changes and create a commit. Returns the SHA."""
         self._git("add", "-A")
         if not self._git("status", "--porcelain"):
             return ""
         self._git("commit", "--quiet", "-m", message)
-        return self._git("rev-parse", "HEAD").strip()
+        sha = self._git("rev-parse", "HEAD").strip()
+        self._maybe_repack()
+        return sha
 
     def log(self, max_count: int = 30) -> list[str]:
         """Return recent commit lines as human-readable strings."""
@@ -166,12 +202,60 @@ class Vault:
             porcelain = self._git("status", "--porcelain")
         except GitError:
             porcelain = ""
+        try:
+            raw_objects = self._git("count-objects", "-v")
+            metrics = self._parse_count_objects(raw_objects)
+        except GitError:
+            metrics = {}
+
+        count = metrics.get("count", 0)
+        size_kib = metrics.get("size", 0)
+        repack_cfg = self.config.storage_repack
+        max_loose = repack_cfg.get("loose_objects", 512)
+        max_kib = repack_cfg.get("loose_bytes", 64 * 1024 * 1024) // 1024
+        needs_repack = bool(repack_cfg.get("enabled", True) and (count >= max_loose or size_kib >= max_kib))
+
         return {
             "root": str(self.root),
             "session_count": len(sessions),
             "runtimes": sorted({s.runtime for s in sessions}),
             "dirty": bool(porcelain.strip()),
             "porcelain": porcelain.strip(),
+            "loose_objects": count,
+            "loose_kib": size_kib,
+            "needs_repack": needs_repack,
+        }
+
+    def discover(self, runtime: str | None = None) -> list[tuple[str, Path]]:
+        """Return a list of (runtime, path) matching the configured patterns."""
+        results: list[tuple[str, Path]] = []
+        for r_name, pattern in self.config.runtime_patterns().items():
+            if runtime and r_name != runtime:
+                continue
+            for path in expand_pattern(pattern):
+                results.append((r_name, path))
+        return results
+
+    def sync(
+        self,
+        runtime: str | None = None,
+        message: str | None = None,
+    ) -> dict:
+        """Discover sessions, snapshot them into the vault, and commit changes."""
+        discovered = self.discover(runtime=runtime)
+        added_count = 0
+        for r_name, src_path in discovered:
+            try:
+                self.add_session(src_path, r_name)
+                added_count += 1
+            except Exception:
+                continue
+        msg = message or f"sync: updated {added_count} session(s)"
+        commit_sha = self.commit(msg)
+        return {
+            "discovered": len(discovered),
+            "added": added_count,
+            "commit": commit_sha,
         }
 
     # -------------------------------------------------------------- exports

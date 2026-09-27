@@ -53,13 +53,14 @@ not required.
 | --- | --- |
 | `init [DIR]` | Initialise a new vault (git repo + config). |
 | `add --runtime <R> FILE` | Snapshot a session file into the vault (idempotent by content). |
+| `sync [--runtime R] [-m MSG]` | Discover, snapshot, and commit updated sessions in one step. |
 | `commit [-m MSG]` | Stage all vault changes and create a commit. |
 | `log [--max N]` | Show recent commits. |
-| `status` | Show vault location, session count, runtimes, dirty state. |
+| `status` | Show vault location, session count, runtimes, dirty state, storage health. |
 | `show SESSION_ID` | Render a session as readable text. |
-| `find QUERY` | Search stored sessions (shows session + snippets). |
+| `find QUERY` | Search stored sessions (streaming line-by-line, low memory). |
 | `discover [--runtime R]` | Expand each runtime's path glob into real session files. |
-| `config set KEY VALUE` | Set a config value (e.g. `paths.claude`). |
+| `config set KEY VALUE` | Set a config value (e.g. `paths.claude`, `storage.repack.enabled`). |
 | `config get [KEY]` | Print a config value or the whole config without a key. |
 | `secrets scan FILE` | List candidate secrets in a session file. |
 | `secrets redact FILE` | Print the file with secrets replaced by `[REDACTED:sha]`. |
@@ -73,6 +74,7 @@ at real session-file locations:
 | --- | --- |
 | claude | `~/.claude/projects/*/*.jsonl` |
 | codex | `~/.codex/sessions/**/*.jsonl` |
+| antigravity | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl` |
 
 `discover` expands these globs into the session files currently on disk, which
 is handy before running `add` or to sanity-check a custom glob:
@@ -80,6 +82,32 @@ is handy before running `add` or to sanity-check a custom glob:
 ```bash
 asv discover                 # all runtimes
 asv discover --runtime codex # just one
+```
+
+## Synchronising sessions in one step
+
+Instead of running `discover` and `add` manually for every individual file, `sync` scans all configured runtime paths, stages new or updated snapshots, and creates a commit if changes occurred:
+
+```bash
+asv sync                                    # sync all configured runtimes
+asv sync --runtime antigravity             # sync only Antigravity transcripts
+asv sync -m "checkpoint: post-PR #5 review" # custom commit message
+```
+
+## Storage and history sizing (ADR-001)
+
+Session JSONL files can grow to tens or hundreds of megabytes. Git handles snapshots efficiently through delta compression, but loose uncompressed objects created before packing can temporarily consume gigabytes.
+
+To prevent disk bloat, `asv commit` (and `asv sync`) performs an automatic, deterministic maintenance step:
+* It reads `git count-objects -v` to measure loose object count and disk size.
+* When loose object count exceeds `storage.repack.loose_objects` (default `512`) or loose size exceeds `storage.repack.loose_bytes` (default `64 MiB`), it runs `git repack -adq` and `git prune-packed`.
+* In measured benchmarks on real 160MB+ session files, this produces up to a **16× reduction** in disk usage (e.g. 1.34 GiB loose down to 85.9 MiB packed) while keeping the working tree as plain, readable JSONL.
+
+Configuring repack thresholds:
+```bash
+asv config set storage.repack.enabled false        # disable auto-repack
+asv config set storage.repack.loose_objects 256    # pack more frequently
+asv config get storage.repack                      # inspect current settings
 ```
 
 Override a runtime's glob per vault — useful when runtimes keep sessions in a

@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from ai_session_vault import __version__
-from ai_session_vault.config import VaultConfig, expand_pattern
-from ai_session_vault.search import search_text
+from ai_session_vault.config import DEFAULT_STORAGE_REPACK, VaultConfig, expand_pattern
+from ai_session_vault.search import search_file, search_text
 from ai_session_vault.vault import GitError, Vault
 
 DEFAULT_VAULT = Path("~/.ai-session-vault").expanduser()
@@ -80,6 +80,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_discover.add_argument("--runtime", default=None, help="restrict to one runtime (e.g. claude, codex)")
     p_discover.add_argument("--json", action="store_true")
     p_discover.add_argument("--vault", type=Path, default=None)
+
+    p_sync = sub.add_parser(
+        "sync",
+        help="discover, snapshot, and commit updated sessions in one step",
+    )
+    p_sync.add_argument("--runtime", "-r", default=None, help="restrict to one runtime (e.g. claude, codex, antigravity)")
+    p_sync.add_argument("-m", "--message", default=None, help="custom commit message")
+    p_sync.add_argument("--json", action="store_true", help="output JSON")
+    p_sync.add_argument("--vault", type=Path, default=None)
 
     p_config = sub.add_parser("config", help="read or set vault configuration")
     config_sub = p_config.add_subparsers(dest="config_command", required=True)
@@ -160,6 +169,25 @@ def _cmd_discover(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sync(args: argparse.Namespace) -> int:
+    vault = _resolve_vault(args.vault)
+    try:
+        res = vault.sync(runtime=args.runtime, message=args.message)
+    except GitError as exc:
+        print(f"asv: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(res, indent=2))
+        return 0
+    print(f"discovered: {res['discovered']} session file(s)")
+    print(f"added:      {res['added']} session(s)")
+    if res["commit"]:
+        print(f"committed:  {res['commit'][:8]}")
+    else:
+        print("committed:  nothing to commit (already up to date)")
+    return 0
+
+
 def _cmd_config(args: argparse.Namespace) -> int:
     vault = _resolve_vault(args.vault)
     if args.config_command == "set":
@@ -167,6 +195,24 @@ def _cmd_config(args: argparse.Namespace) -> int:
         if key.startswith("paths."):
             runtime = key.split(".", 1)[1]
             vault.config.set_path(runtime, args.value)
+            vault.config.save(vault.root / VaultConfig.CONFIG_FILENAME)
+            print(f"set {key} = {args.value}")
+            return 0
+        if key.startswith("storage.repack."):
+            field = key.split(".", 2)[2]
+            storage = vault.config.raw.setdefault("storage", {})
+            repack = storage.setdefault("repack", dict(DEFAULT_STORAGE_REPACK))
+            if field == "enabled":
+                repack["enabled"] = args.value.lower() in ("true", "1", "yes")
+            elif field in ("loose_objects", "loose_bytes"):
+                try:
+                    repack[field] = int(args.value)
+                except ValueError:
+                    print(f"asv: error: value for {key!r} must be an integer", file=sys.stderr)
+                    return 2
+            else:
+                print(f"asv: error: unsupported config key {key!r}", file=sys.stderr)
+                return 2
             vault.config.save(vault.root / VaultConfig.CONFIG_FILENAME)
             print(f"set {key} = {args.value}")
             return 0
@@ -211,6 +257,9 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"sessions:   {status['session_count']}")
     print(f"runtimes:   {', '.join(status['runtimes']) or '-'}")
     print(f"dirty:      {'yes' if status['dirty'] else 'no'}")
+    if "loose_objects" in status:
+        packed_str = "repack recommended" if status.get("needs_repack") else "healthy"
+        print(f"storage:    {status['loose_objects']} loose objects ({status.get('loose_kib', 0)} KiB) [{packed_str}]")
     return 0
 
 
@@ -231,20 +280,19 @@ def _cmd_find(args: argparse.Namespace) -> int:
     vault = _resolve_vault(args.vault)
     results: list[dict] = []
     for stored in vault.sessions():
-        text = stored.path.read_text(encoding="utf-8", errors="replace")
-        offsets = list(search_text(text, args.query, args.case_sensitive))
-        if not offsets:
+        matches, snippets = search_file(
+            stored.path,
+            args.query,
+            case_sensitive=args.case_sensitive,
+            max_snippets=5,
+        )
+        if not matches:
             continue
-        snippets = []
-        for offset, length in offsets[:5]:
-            start = max(0, offset - 40)
-            end = min(len(text), offset + length + 40)
-            snippets.append(text[start:end].replace("\n", " "))
         results.append(
             {
                 "session_id": stored.session_id,
                 "runtime": stored.runtime,
-                "matches": len(offsets),
+                "matches": matches,
                 "snippets": snippets,
             }
         )
@@ -306,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
         "secrets": _cmd_secrets,
         "discover": _cmd_discover,
         "config": _cmd_config,
+        "sync": _cmd_sync,
     }
     return handlers[args.command](args)
 

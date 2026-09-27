@@ -52,6 +52,8 @@ def turn_count(path: Path) -> int:
     A record counts as a turn if it has a ``message`` key with a ``role``, a
     top-level ``role`` field, or a ``payload``/``message`` object with a
     ``role`` (codex ``response_item`` records nest ``role`` in ``payload``).
+    Antigravity records count if their type is ``USER_INPUT`` or
+    ``PLANNER_RESPONSE``, or source is ``USER_EXPLICIT`` or ``MODEL``.
     Malformed lines never count.
     """
     count = 0
@@ -66,6 +68,14 @@ def turn_count(path: Path) -> int:
         payload = record.get("payload")
         if isinstance(payload, dict) and payload.get("role"):
             count += 1
+            continue
+        rec_type = record.get("type")
+        if rec_type in ("USER_INPUT", "PLANNER_RESPONSE"):
+            count += 1
+            continue
+        if record.get("source") in ("USER_EXPLICIT", "MODEL"):
+            count += 1
+            continue
     return count
 
 
@@ -73,15 +83,21 @@ def derive_session_id(path: Path, embedded_id: str | None) -> str:
     """Calculate a stable, short session identifier.
 
     Priority: a session identifier embedded in the file (first field from
-    ``SESSION_ID_FIELDS``), then the filename (minus extension). The result is
-    sanitised to a safe slug; a blank result falls back to a digest of the
-    absolute path. Long values are capped at ``MAX_SESSION_ID`` characters —
-    long enough to keep UUIDs (36 chars) intact.
+    ``SESSION_ID_FIELDS``), then an ancestor directory matching a UUID pattern
+    (for runtimes like Antigravity that store transcripts in ``brain/<uuid>/...``),
+    then the filename (minus extension). The result is sanitised to a safe slug;
+    a blank result falls back to a digest of the absolute path. Long values are
+    capped at ``MAX_SESSION_ID`` characters — long enough to keep UUIDs (36 chars)
+    intact.
     """
     if embedded_id:
         slug = re.sub(r"[^a-zA-Z0-9._-]", "-", embedded_id)
         if slug:
             return slug[:MAX_SESSION_ID]
+    if path.stem in ("transcript", "transcript_full"):
+        for part in reversed(path.parts[:-1]):
+            if re.match(r"^[0-9a-fA-F-]{36}$", part):
+                return part[:MAX_SESSION_ID]
     base = path.stem
     slug = re.sub(r"[^a-zA-Z0-9._-]", "-", base)
     if slug:

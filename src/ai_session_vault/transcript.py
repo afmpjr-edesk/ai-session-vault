@@ -44,19 +44,32 @@ def _truncate(text: str, limit: int = 4000) -> str:
 def render_record(record: dict[str, Any]) -> str | None:
     """Render a single JSONL record to one or more text lines, or None to skip."""
     message = record.get("message")
-    if not isinstance(message, dict):
+    if isinstance(message, dict):
+        title = "user" if record.get("type") == "user" else None
+        role = message.get("role") or title or record.get("type") or "agent"
+        content = _content_text(message.get("content"))
+        if not content:
+            tool_use = message.get("tool_use")
+            if isinstance(tool_use, dict) and tool_use.get("name"):
+                content = f"[tool: {tool_use['name']}]"
+            else:
+                return None
+        label = str(role).strip()
+        return f"{label}: {_truncate(content)}"
+
+    # Direct / Antigravity shape
+    content = _content_text(record.get("content"))
+    if not content and record.get("thinking"):
+        content = _content_text(record.get("thinking"))
+    if not content:
+        tool_calls = record.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            names = [tc.get("name", "unknown") for tc in tool_calls if isinstance(tc, dict)]
+            content = f"[tools: {', '.join(names)}]"
+    if not content:
         return None
 
-    title = "user" if record.get("type") == "user" else None
-    role = message.get("role") or title or record.get("type") or "agent"
-    content = _content_text(message.get("content"))
-    if not content:
-        tool_use = message.get("tool_use")
-        if isinstance(tool_use, dict) and tool_use.get("name"):
-            content = f"[tool: {tool_use['name']}]"
-        else:
-            return None
-
+    role = record.get("source") or record.get("type") or "agent"
     label = str(role).strip()
     return f"{label}: {_truncate(content)}"
 

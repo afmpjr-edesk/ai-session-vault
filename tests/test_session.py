@@ -133,6 +133,26 @@ class SessionParsingTests(unittest.TestCase):
         self.assertEqual(meta["sha256"], session.sha256_file(path))
         self.assertEqual(meta["bytes"], path.stat().st_size)
 
+    def test_derive_session_id_extracts_antigravity_ancestor_uuid(self) -> None:
+        path = Path(
+            "/home/user/.gemini/antigravity/brain/ea28cd4a-12ac-4e67-80fc-f1be811b9b8f/.system_generated/logs/transcript.jsonl"
+        )
+        self.assertEqual(
+            session.derive_session_id(path, None),
+            "ea28cd4a-12ac-4e67-80fc-f1be811b9b8f",
+        )
+
+    def test_turn_count_counts_antigravity_records(self) -> None:
+        path = _write_sessions(
+            self.tmp,
+            [
+                {"step_index": 0, "type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "hello"},
+                {"step_index": 1, "type": "PLANNER_RESPONSE", "source": "MODEL", "content": "response"},
+                {"step_index": 2, "type": "CHECKPOINT", "source": "SYSTEM"},
+            ],
+        )
+        self.assertEqual(session.turn_count(path), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
