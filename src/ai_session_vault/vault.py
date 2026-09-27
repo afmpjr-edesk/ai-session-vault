@@ -228,6 +228,15 @@ class Vault:
 
     def discover(self, runtime: str | None = None) -> list[tuple[str, Path]]:
         """Return a list of (runtime, path) matching the configured patterns."""
+        if runtime is None or runtime == "opencode":
+            if "opencode" in self.config.runtime_patterns():
+                try:
+                    from .opencode import extract_opencode_sessions
+
+                    extract_opencode_sessions()
+                except Exception:
+                    pass
+
         results: list[tuple[str, Path]] = []
         for r_name, pattern in self.config.runtime_patterns().items():
             if runtime and r_name != runtime:

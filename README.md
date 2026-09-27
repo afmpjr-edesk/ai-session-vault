@@ -45,6 +45,7 @@ asv secrets scan|redact FILE   detect and redact secrets before sharing
 # - Claude Code (~/.claude/projects/*/*.jsonl)
 # - Codex (~/.codex/sessions/**/*.jsonl)
 # - Antigravity (~/.gemini/antigravity/brain/*/.../transcript.jsonl)
+# - OpenCode (~/.local/share/opencode/sessions/*.jsonl, auto-extracted from SQLite)
 asv init ~/.ai-session-vault
 
 # Sync all sessions across all runtimes in one step (event-driven, no cron)

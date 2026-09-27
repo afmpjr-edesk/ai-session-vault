@@ -75,6 +75,7 @@ at real session-file locations:
 | claude | `~/.claude/projects/*/*.jsonl` |
 | codex | `~/.codex/sessions/**/*.jsonl` |
 | antigravity | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl` |
+| opencode | `~/.local/share/opencode/sessions/*.jsonl` (auto-extracted from SQLite) |
 
 `discover` expands these globs into the session files currently on disk, which
 is handy before running `add` or to sanity-check a custom glob:

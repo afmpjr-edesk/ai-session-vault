@@ -23,6 +23,11 @@ DEFAULT_PATHS: list[dict[str, str]] = [
         "annotation": "Antigravity",
         "pattern": "~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl",
     },
+    {
+        "runtime": "opencode",
+        "annotation": "OpenCode",
+        "pattern": "~/.local/share/opencode/sessions/*.jsonl",
+    },
 ]
 
 DEFAULT_IGNORE: tuple[str, ...] = ()

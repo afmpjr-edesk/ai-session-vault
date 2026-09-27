@@ -35,9 +35,11 @@ class VaultConfigTests(unittest.TestCase):
             "~/.codex/sessions/**/*.jsonl",
         )
 
-    def test_default_paths_no_longer_include_opencode(self) -> None:
+    def test_default_paths_include_opencode(self) -> None:
         names = {entry["runtime"] for entry in DEFAULT_PATHS}
-        self.assertNotIn("opencode", names)
+        self.assertIn("opencode", names)
+        patterns = {entry["runtime"]: entry["pattern"] for entry in DEFAULT_PATHS}
+        self.assertEqual(patterns["opencode"], "~/.local/share/opencode/sessions/*.jsonl")
 
     def test_load_missing_file_returns_default(self) -> None:
         config = VaultConfig.load(self.tmp / "nope.json")
